@@ -1,0 +1,138 @@
+#define _CRT_SECURE_NO_WARNINGS
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#include <mpi.h>
+
+int main(int argc, char** argv) {
+    int rank, size;
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    int num_runs = 0;
+    size_t global_SIZE = 0;
+
+    if (rank == 0) {
+        // Ввод количества запусков
+        printf("Enter the number of runs: ");
+        fflush(stdout);
+        scanf("%d", &num_runs);
+
+        if (num_runs <= 0) {
+            printf("Error: Number of runs must be positive!\n");
+            MPI_Abort(MPI_COMM_WORLD, 1);
+            return 1;
+        }
+
+        // Ввод размера массива
+        printf("Enter the number of array elements: ");
+        fflush(stdout);
+        scanf("%zu", &global_SIZE);
+
+        if (global_SIZE <= 0) {
+            printf("Error: Number of elements must be positive!\n");
+            MPI_Abort(MPI_COMM_WORLD, 1);
+            return 1;
+        }
+    }
+
+    // Рассылаем количество запусков и размер массива всем процессам
+    MPI_Bcast(&num_runs, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Bcast(&global_SIZE, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
+
+    // Вычисляем размер части для каждого процесса
+    size_t local_SIZE = global_SIZE / size;
+    if (rank == size - 1) {
+        local_SIZE = global_SIZE - (size - 1) * local_SIZE;
+    }
+
+    // Переменные для накопления времени
+    double total_fill_time = 0.0;
+    double total_calc_time = 0.0;
+    double total_total_time = 0.0;
+
+    for (int run = 0; run < num_runs; run++) {
+        double total_start = 0.0, fill_start, fill_end, calc_start, calc_end, total_end = 0.0;
+
+        if (rank == 0) {
+            total_start = MPI_Wtime();
+        }
+
+        // Синхронизация перед началом заполнения
+        MPI_Barrier(MPI_COMM_WORLD);
+        fill_start = MPI_Wtime();
+
+        int* local_array = (int*)malloc(local_SIZE * sizeof(int));
+        if (local_array == NULL) {
+            printf("Process %d: Memory allocation error!\n", rank);
+            MPI_Abort(MPI_COMM_WORLD, 1);
+            return 1;
+        }
+
+        // Каждый процесс заполняет свою часть массива
+        srand(time(NULL) + run + rank);
+        for (size_t i = 0; i < local_SIZE; i++) {
+            local_array[i] = rand() % 100;
+        }
+
+        MPI_Barrier(MPI_COMM_WORLD);
+        fill_end = MPI_Wtime();
+
+        // Вычисление частичной суммы
+        calc_start = MPI_Wtime();
+        long long local_sum = 0;
+        for (size_t i = 0; i < local_SIZE; i++) {
+            local_sum += local_array[i];
+        }
+
+        // Собираем частичные суммы на процессе 0
+        long long global_sum;
+        MPI_Reduce(&local_sum, &global_sum, 1, MPI_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
+
+        MPI_Barrier(MPI_COMM_WORLD);
+        calc_end = MPI_Wtime();
+
+        if (rank == 0) {
+            total_end = MPI_Wtime();
+        }
+
+        // Вычисление времени
+        double fill_time = fill_end - fill_start;
+        double calc_time = calc_end - calc_start;
+        double total_time = (rank == 0) ? (total_end - total_start) : 0.0;
+
+        // Собираем статистику по времени
+        double max_fill_time, max_calc_time, max_total_time;
+
+        MPI_Reduce(&fill_time, &max_fill_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+        MPI_Reduce(&calc_time, &max_calc_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+        MPI_Reduce(&total_time, &max_total_time, 1, MPI_DOUBLE, MPI_MAX, 0, MPI_COMM_WORLD);
+
+        // Синхронизация перед выводом результатов
+        MPI_Barrier(MPI_COMM_WORLD);
+        if (rank == 0) {
+            total_fill_time += max_fill_time;
+            total_calc_time += max_calc_time;
+            total_total_time += max_total_time;
+
+            printf("\n=== Run %d ===\n", run + 1);
+            printf("Fill time: %.4f sec\n", max_fill_time);
+            printf("Calculation time: %.4f sec\n", max_calc_time);
+            printf("Total time: %.4f sec\n", max_total_time);
+            fflush(stdout);
+        }
+
+        free(local_array);
+    }
+
+    if (rank == 0) {
+        printf("\n=== FINAL AVERAGE VALUES (%d runs) ===\n", num_runs);
+        printf("Average fill time: %.4f sec\n", total_fill_time / num_runs);
+        printf("Average calculation time: %.4f sec\n", total_calc_time / num_runs);
+        printf("Average total time: %.4f sec\n", total_total_time / num_runs);
+    }
+
+    MPI_Finalize();
+    return 0;
+}
