@@ -1,0 +1,114 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <mpi.h>
+#include <time.h>
+
+#define ELEMENTS 10000000
+#define ITERATIONS 100
+
+typedef struct {
+    double fill;
+    double compute;
+    double total;
+} RunTiming;
+
+void initialize_arrays(int rank, double** a, double** b, int size, int seed) {
+    if (rank != 0) return;
+    
+    *a = malloc(size * sizeof(double));
+    *b = malloc(size * sizeof(double));
+    srand(time(NULL) + seed);
+    
+    for (int i = 0; i < size; i++) {
+        (*a)[i] = (double)rand() / RAND_MAX * 100.0;
+        (*b)[i] = (double)rand() / RAND_MAX * 100.0 + 0.1;
+    }
+}
+
+double compute_sum(double* a, double* b, int size) {
+    double sum = 0.0;
+    for (int i = 0; i < size; i++) {
+        sum += a[i] + b[i];
+    }
+    return sum;
+}
+
+void print_results(int run, double sum, RunTiming timing) {
+    printf("Run %d\n", run);
+    printf("Total sum: %.0f\n", sum);
+    printf("Fill time: %.6f sec\n", timing.fill);
+    printf("Compute time: %.6f sec\n", timing.compute);
+    printf("Total time: %.6f sec\n\n", timing.total);
+    
+    if (run == 4) {
+        printf("---\nPERFORMANCE MARKER: %.6f sec\n---\n", timing.total);
+    }
+}
+
+int main(int argc, char** argv) {
+    MPI_Init(&argc, &argv);
+    
+    int rank, procs;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &procs);
+    
+    const int local_size = ELEMENTS / procs;
+    double *local_a = malloc(local_size * sizeof(double));
+    double *local_b = malloc(local_size * sizeof(double));
+    
+    RunTiming totals = {0};
+    
+    if (rank == 0) {
+        printf("Processing %d elements\n", ELEMENTS);
+    }
+
+    for (int run = 1; run <= ITERATIONS; run++) {
+        double *a = NULL, *b = NULL;
+        RunTiming timing;
+        
+        // Initialization phase
+        if (rank == 0) {
+            double start = MPI_Wtime();
+            initialize_arrays(rank, &a, &b, ELEMENTS, run);
+            timing.fill = MPI_Wtime() - start;
+        }
+
+        // Computation phase
+        double comp_start = MPI_Wtime();
+        MPI_Scatter(a, local_size, MPI_DOUBLE, local_a, local_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        MPI_Scatter(b, local_size, MPI_DOUBLE, local_b, local_size, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        
+        double local_sum = compute_sum(local_a, local_b, local_size);
+        double global_sum;
+        MPI_Reduce(&local_sum, &global_sum, 1, MPI_DOUBLE, MPI_SUM, 0, MPI_COMM_WORLD);
+        timing.compute = MPI_Wtime() - comp_start;
+        timing.total = timing.fill + timing.compute;
+
+        if (rank == 0) {
+            totals.fill += timing.fill;
+            totals.compute += timing.compute;
+            totals.total += timing.total;
+            
+            if (run <= 4 || run >= ITERATIONS - 2) {
+                print_results(run, global_sum, timing);
+            }
+        }
+        
+        if (rank == 0) {
+            free(a);
+            free(b);
+        }
+    }
+
+    if (rank == 0) {
+        printf("=== FINAL RESULTS ===\n");
+        printf("Average fill time: %.6f sec\n", totals.fill / ITERATIONS);
+        printf("Average compute time: %.6f sec\n", totals.compute / ITERATIONS);
+        printf("Average total time: %.6f sec\n", totals.total / ITERATIONS);
+    }
+
+    free(local_a);
+    free(local_b);
+    MPI_Finalize();
+    return 0;
+}

@@ -1,0 +1,66 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+
+#define SIZE 10000000
+#define RUNS 100
+
+typedef struct {
+    double fill;
+    double compute;
+} Timing;
+
+void process_run(int run, Timing* timing) {
+    double *a = malloc(SIZE * sizeof(double));
+    double *b = malloc(SIZE * sizeof(double));
+    
+    clock_t start = clock();
+    srand(time(NULL) + run);
+    for (int i = 0; i < SIZE; i++) {
+        a[i] = (double)rand() / RAND_MAX * 100.0;
+        b[i] = (double)rand() / RAND_MAX * 100.0 + 0.1;
+    }
+    timing->fill = (double)(clock() - start) / CLOCKS_PER_SEC;
+    
+    start = clock();
+    double sum = 0.0;
+    for (int i = 0; i < SIZE; i++) {
+        sum += a[i] + b[i];
+    }
+    timing->compute = (double)(clock() - start) / CLOCKS_PER_SEC;
+    
+    printf("Run %d\n", run);
+    printf("Sum: %.0f\n", sum);
+    printf("Fill: %.6f sec\n", timing->fill);
+    printf("Compute: %.6f sec\n", timing->compute);
+    printf("Total: %.6f sec\n\n", timing->fill + timing->compute);
+    
+    free(a);
+    free(b);
+}
+
+int main() {
+    printf("Array size: %d\n", SIZE);
+    
+    Timing totals = {0};
+    
+    for (int i = 1; i <= RUNS; i++) {
+        Timing current;
+        process_run(i, &current);
+        
+        totals.fill += current.fill;
+        totals.compute += current.compute;
+        
+        if (i == 4) {
+            printf("---\nCHECKPOINT: %.6f sec\n---\n", 
+                  current.fill + current.compute);
+        }
+    }
+    
+    printf("=== FINAL ===\n");
+    printf("Avg fill: %.6f sec\n", totals.fill / RUNS);
+    printf("Avg compute: %.6f sec\n", totals.compute / RUNS);
+    printf("Avg total: %.6f sec\n", (totals.fill + totals.compute) / RUNS);
+    
+    return 0;
+}

@@ -1,0 +1,112 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <mpi.h>
+#include <time.h>
+
+#define ROWS 3160
+#define COLS 3160
+#define ITERATIONS 100
+
+typedef double Matrix[ROWS][COLS];
+
+void fill_matrix(Matrix mat, int seed) {
+    srand(time(NULL) + seed);
+    for (int i = 0; i < ROWS; i++) {
+        for (int j = 0; j < COLS; j++) {
+            mat[i][j] = (double)rand() / RAND_MAX * 100.0;
+        }
+    }
+}
+
+void matrix_operations(double a[][COLS], double b[][COLS], 
+                      double sum[][COLS], int rows) {
+    for (int i = 0; i < rows; i++) {
+        for (int j = 0; j < COLS; j++) {
+            sum[i][j] = a[i][j] + b[i][j];
+        }
+    }
+}
+
+int main(int argc, char** argv) {
+    MPI_Init(&argc, &argv);
+    
+    int rank, procs;
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &procs);
+    
+    const int local_rows = ROWS / procs;
+    double (*local_a)[COLS] = malloc(local_rows * sizeof(*local_a));
+    double (*local_b)[COLS] = malloc(local_rows * sizeof(*local_b));
+    double (*local_sum)[COLS] = malloc(local_rows * sizeof(*local_sum));
+    
+    Matrix *a = NULL, *b = NULL, *sum = NULL;
+    
+    if (rank == 0) {
+        a = malloc(sizeof(Matrix));
+        b = malloc(sizeof(Matrix));
+        sum = malloc(sizeof(Matrix));
+    }
+
+    double total_times[3] = {0};
+    
+    for (int run = 1; run <= ITERATIONS; run++) {
+        double fill_time = 0.0;
+        
+        if (rank == 0) {
+            double start = MPI_Wtime();
+            fill_matrix(*a, run);
+            for (int i = 0; i < ROWS; i++) {
+                for (int j = 0; j < COLS; j++) {
+                    (*b)[i][j] = (double)rand() / RAND_MAX * 100.0 + 0.1;
+                }
+            }
+            fill_time = MPI_Wtime() - start;
+        }
+
+        MPI_Barrier(MPI_COMM_WORLD);
+        double comp_start = MPI_Wtime();
+        
+        MPI_Scatter(*a, local_rows*COLS, MPI_DOUBLE, 
+                   local_a, local_rows*COLS, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        MPI_Scatter(*b, local_rows*COLS, MPI_DOUBLE, 
+                   local_b, local_rows*COLS, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        
+        matrix_operations(local_a, local_b, local_sum, local_rows);
+        
+        MPI_Gather(local_sum, local_rows*COLS, MPI_DOUBLE, 
+                 *sum, local_rows*COLS, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+        
+        double comp_time = MPI_Wtime() - comp_start;
+        double total_time = fill_time + comp_time;
+
+        if (rank == 0) {
+            total_times[0] += fill_time;
+            total_times[1] += comp_time;
+            total_times[2] += total_time;
+            
+            printf("Run %d\n", run);
+            printf("Sample value: %.2f\n", (*sum)[0][0]);
+            printf("Fill: %.6f sec\n", fill_time);
+            printf("Compute: %.6f sec\n", comp_time);
+            printf("Total: %.6f sec\n\n", total_time);
+        }
+    }
+
+    if (rank == 0) {
+        printf("=== SUMMARY ===\n");
+        printf("Avg fill: %.6f sec\n", total_times[0] / ITERATIONS);
+        printf("Avg compute: %.6f sec\n", total_times[1] / ITERATIONS);
+        printf("Avg total: %.6f sec\n", total_times[2] / ITERATIONS);
+        
+        free(a);
+        free(b);
+        free(sum);
+    }
+
+    free(local_a);
+    free(local_b);
+    free(local_sum);
+    
+    MPI_Finalize();
+    return 0;
+}

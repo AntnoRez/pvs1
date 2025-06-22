@@ -1,0 +1,67 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+
+#define ROWS 3160
+#define COLS 3160
+#define ITERATIONS 100
+
+void initialize_matrices(double a[ROWS][COLS], double b[ROWS][COLS], int seed) {
+    srand(time(NULL) + seed);
+    for (int i = 0; i < ROWS; i++) {
+        for (int j = 0; j < COLS; j++) {
+            a[i][j] = (double)rand() / RAND_MAX * 100.0;
+            b[i][j] = (double)rand() / RAND_MAX * 100.0 + 0.1;
+        }
+    }
+}
+
+double compute_operations(double a[ROWS][COLS], double b[ROWS][COLS]) {
+    double total = 0.0;
+    for (int i = 0; i < ROWS; i++) {
+        for (int j = 0; j < COLS; j++) {
+            total += a[i][j] + b[i][j];
+        }
+    }
+    return total;
+}
+
+void print_timing(int run, double sum, double fill, double compute) {
+    printf("Run %d\n", run);
+    printf("Total: %.0f\n", sum);
+    printf("Fill: %.6f sec\n", fill);
+    printf("Compute: %.6f sec\n", compute);
+    printf("Combined: %.6f sec\n\n", fill + compute);
+}
+
+int main() {
+    printf("Matrix size: %dx%d\n", ROWS, COLS);
+    
+    double a[ROWS][COLS], b[ROWS][COLS];
+    double total_fill = 0.0, total_comp = 0.0;
+    
+    for (int i = 1; i <= ITERATIONS; i++) {
+        clock_t start = clock();
+        initialize_matrices(a, b, i);
+        double fill_time = (double)(clock() - start) / CLOCKS_PER_SEC;
+        
+        start = clock();
+        double sum = compute_operations(a, b);
+        double comp_time = (double)(clock() - start) / CLOCKS_PER_SEC;
+        
+        print_timing(i, sum, fill_time, comp_time);
+        total_fill += fill_time;
+        total_comp += comp_time;
+        
+        if (i == 4) {
+            printf("---\nREFERENCE POINT\n---\n");
+        }
+    }
+    
+    printf("=== SUMMARY ===\n");
+    printf("Avg fill: %.6f sec\n", total_fill / ITERATIONS);
+    printf("Avg compute: %.6f sec\n", total_comp / ITERATIONS);
+    printf("Avg total: %.6f sec\n", (total_fill + total_comp) / ITERATIONS);
+    
+    return 0;
+}
