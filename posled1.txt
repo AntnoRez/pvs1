@@ -1,0 +1,92 @@
+#define _CRT_SECURE_NO_WARNINGS
+#include <stdio.h>
+#include <stdlib.h>
+#include <locale.h>
+#include <time.h>
+
+#define DISPLAY_RUNS 10 // Number of runs to display from start and end
+
+int main() {
+    setlocale(LC_ALL, ""); // Enable locale-specific formatting
+
+    size_t SIZE;
+    int NUM_RUNS;
+
+    printf("Enter array size (number of elements): ");
+    scanf("%zu", &SIZE);
+    printf("Enter number of runs: ");
+    scanf("%d", &NUM_RUNS);
+
+    if (SIZE <= 0 || NUM_RUNS <= 0) {
+        printf("Error: Both array size and number of runs must be positive integers!\n");
+        return 1;
+    }
+
+    // Accumulators for performance metrics
+    double total_fill_time = 0.0;    // Total time spent filling array
+    double total_calc_time = 0.0;    // Total time spent calculating sum
+    double total_total_time = 0.0;   // Total execution time
+
+    printf("\nRunning benchmark for %d iterations...\n", NUM_RUNS);
+
+    for (int run = 0; run < NUM_RUNS; run++) {
+        clock_t total_start = clock(); // Start full iteration timer
+
+        // Phase 1: Array allocation and initialization
+        clock_t fill_start = clock();
+        int* array = (int*)malloc(SIZE * sizeof(int));
+        if (array == NULL) {
+            printf("Memory allocation failed!\n");
+            return 1;
+        }
+
+        // Seed RNG differently for each run
+        srand(time(NULL) + run);  
+        for (size_t i = 0; i < SIZE; i++) {
+            array[i] = rand() % 100; // Fill with random values 0-99
+        }
+        clock_t fill_end = clock();
+
+        // Phase 2: Sum calculation
+        clock_t calc_start = clock();
+        long long sum = 0;
+        for (size_t i = 0; i < SIZE; i++) {
+            sum += array[i];
+        }
+        clock_t calc_end = clock();
+
+        clock_t total_end = clock(); // End full iteration timer
+
+        // Calculate timing results for current run
+        double fill_time = (double)(fill_end - fill_start) / CLOCKS_PER_SEC;
+        double calc_time = (double)(calc_end - calc_start) / CLOCKS_PER_SEC;
+        double total_time = (double)(total_end - total_start) / CLOCKS_PER_SEC;
+
+        // Update cumulative timings
+        total_fill_time += fill_time;
+        total_calc_time += calc_time;
+        total_total_time += total_time;
+
+        // Display first 10 and last 10 runs
+        if (run < DISPLAY_RUNS || run >= NUM_RUNS - DISPLAY_RUNS) {
+            if (run == DISPLAY_RUNS && NUM_RUNS > 2*DISPLAY_RUNS) {
+                printf("\n... [skipped %d runs] ...\n", NUM_RUNS - 2*DISPLAY_RUNS);
+            }
+            printf("\n[Run %d/%d]", run + 1, NUM_RUNS);
+            printf("\n• Array sum: %lld", sum);
+            printf("\n• filling time: %.4f sec", fill_time);
+            printf("\n• calculation time:    %.4f sec", calc_time);
+            printf("\n• Total run time:      %.4f sec", total_time);
+        }
+
+        free(array); // Release memory
+    }
+
+    // Display aggregate statistics
+    printf("\nPERFORMANCE SUMMARY (%d runs) ===", NUM_RUNS);
+    printf("\n• Avg filling time: %.4f sec", total_fill_time / NUM_RUNS);
+    printf("\n• Avg calculation time:    %.4f sec", total_calc_time / NUM_RUNS);
+    printf("\n• Avg total time per run:  %.4f sec\n", total_total_time / NUM_RUNS);
+
+    return 0;
+}
